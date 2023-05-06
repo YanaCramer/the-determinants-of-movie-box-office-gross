@@ -1,0 +1,345 @@
+install.packages("tidytext")
+install.packages("dplyr")
+install.packages("stringr")
+install.packages("ggplot2")
+install.packages("tidyr")
+install.packages("scales")
+install.packages("gt")
+install.packages("readr")
+install.packages("readxl")
+install.packages("lexicon")
+install.packages("wordcloud")
+install.packages("reshape2")
+install.packages("textdata")
+install.packages("topicmodels")
+install.packages("tidyverse")
+install.packages("SnowballC")
+install.packages("widyr")
+install.packages("furrr")
+install.packages("irlba")
+
+library(readr)
+library(tidytext)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+library(tidyr)
+library(scales)
+library(gt)
+library(readxl)
+library(lexicon)
+library(wordcloud)
+library(reshape2)
+library(textdata)
+library(topicmodels)
+library(tidyverse)
+library(SnowballC)
+library(widyr)
+library(furrr)
+library(irlba)
+
+install.packages('tidymodels')
+install.packages('textrecipes')
+install.packages('LiblineaR')
+install.packages('ranger')
+install.packages('spacyr')
+install.packages('text2vec')
+install.packages('rsample')
+#install.packages('recipes')
+install.packages('glmnet')
+#install.packages('kernlab')
+
+library(kernlab)
+library(recipes)
+library(rsample)
+library(tidymodels)
+library(textrecipes)
+library(LiblineaR)
+library(ranger)
+library(spacyr)
+library(rlang)
+library(text2vec)
+library(generics)
+library(glmnet)
+
+review <- read_excel("C:/R/text_data_mod.xlsx")
+
+#разделим на слова
+tidy_review <- review %>%
+  unnest_tokens(output = word, input = text)
+
+#удалим стоп-слова
+tidy_review <- tidy_review %>% anti_join(stop_words)
+
+#посдчет слов
+review_words <- tidy_review %>%
+  count(movie, word, sort = TRUE)
+
+#подсчет слов во всех отзывах
+total_words <- review_words %>%
+  group_by(movie) %>%
+  summarize(total = sum(n))
+#добавим правый столбец к левому
+review_words <- left_join(review_words, total_words)
+
+#найдем слова, которые важны, но не слишком распространены
+review_words <- review_words %>%
+  bind_tf_idf(word, movie, n)
+
+#ранжируем по убыванию td-idf
+A <- review_words %>%
+  dplyr::select(-total) %>%
+  arrange(desc(tf_idf))
+A[, 3:6] <- A[, 3:6] %>% round(4)
+
+#приведение в пригодный для анализа вид
+#оставим слова, которые встречаются больше 100 раз
+tidy_reviews2 <- review %>%
+  dplyr::select(movie, text) %>%
+  unnest_tokens(word, text) %>%
+  anti_join(get_stopwords(), by = "word") %>%
+  add_count(word) %>%
+  filter(n >= 100) %>%
+  select(-n) %>% unique()
+
+#поиск связанных слов: если PMI высокий, то слова связаны
+tidy_pmi <- tidy_reviews2 %>%
+  pairwise_pmi(word, movie)
+
+#svd разложение: получим координаты слов в одномерном пространстве
+tidy_word_vectors <- tidy_pmi %>%
+  widely_svd(
+    item1, item2, pmi,
+    nv = 3, maxit = 20
+  )
+
+#PCA - ключевые 30 слов
+tidy_word_vectors %>%
+  filter(dimension <= 10) %>%
+  group_by(dimension) %>%
+  top_n(30, abs(value)) %>%
+  ungroup() %>%
+  mutate(item1 = reorder_within(item1, value, dimension)) %>%
+  ggplot(aes(item1, value, fill = dimension)) +
+  geom_col(alpha = 0.8, show.legend = FALSE) +
+  facet_wrap(~dimension, scales = "free_y", ncol = 4) +
+  scale_x_reordered() +
+  coord_flip() +
+  labs(
+    x = NULL,
+    y = "Value",
+    title = "First principal components for texts of reviews",
+    subtitle = paste("Top words contributing to the components that explain",
+                     "the most variation")
+  )
+
+
+#можно представить отзывы как векторы в пространстве с небольшой размерностью
+word_matrix <- tidy_reviews2 %>% na.omit() %>%
+  count(movie, word) %>%
+  cast_sparse(movie, word, n)
+embedding_matrix <- tidy_word_vectors %>%
+  cast_sparse(item1, dimension, value)
+
+#зададим одинаковый порядок
+A <- colnames(word_matrix)[order(colnames(word_matrix))]
+B <- rownames(embedding_matrix)[order(rownames(embedding_matrix))]
+
+doc_matrix <- word_matrix[,A] %*% embedding_matrix[B,]
+
+#посмотрим на отзывы
+head(round(doc_matrix, 2),15)
+
+#посчитаем средние по каждой компоненте
+comp1 <- mean(doc_matrix[, 1])
+comp2 <- mean(doc_matrix[, 2])
+comp3 <- mean(doc_matrix[, 3])
+
+
+data_comp <- cbind(component1, component2, component3)
+data_comp <- as.data.frame(data_comp)
+library(writexl)
+data_comp$title <- row.names(data_comp)
+write_xlsx(data_comp, "data_comp.xlsx")
+
+
+
+#добавим свой словарь эмоций и чувств
+em_voc <- read_excel("C:/R/emotions_and_feelings_voc.xlsx")
+
+#приведем слова этого словаря к корню
+stem_voc <- em_voc %>%
+  mutate(stem = wordStem(word))
+
+#добавим отзывы
+review <- read_excel("C:/R/text_data.xlsx")
+
+#токенизация и удаление стоп-слов из отзывов
+tidy_review <- review %>%
+  unnest_tokens(word, text) %>%
+  anti_join(get_stopwords())
+
+stem_review <- tidy_review %>%
+  mutate(stem = wordStem(word))
+
+#вытащим отдельно названия фильмов
+movie_name <- distinct(stem_review[, c(1, 2)])
+
+#посмотрим на частоту слов, которые означают эмоции для всех отзывов
+A <- stem_review %>% inner_join(stem_voc, by = "stem") #%>% count(stem, sort = TRUE)
+head(A)
+#inner_join оставляет только общие элементы
+
+#посдчет слов из словаря для каждого отзыва
+review_em <- A %>%
+  count(review, stem, sort = TRUE)
+
+#посдчет слов всего для каждого отзыва
+review_all_toks <- stem_review %>%
+  count(review, stem, sort = TRUE)
+
+review_all_em <- review_em %>% group_by(review) %>% summarise(n = sum(n, na.rm = TRUE))
+review_all <- review_all_toks %>% group_by(review) %>% summarise(n = sum(n, na.rm = TRUE))
+full_em <- review_all %>% inner_join(review_all_em, by = "review")
+ratio_em <- full_em$n.y / full_em$n.x
+ratio_em <- full_em %>% group_by(review) %>% summarise(n = n.y / n.x)
+
+#соединим с фильмами и усредним по фильмам
+movie_em <- ratio_em %>% inner_join(movie_name, by = "review")
+movie_em <- movie_em %>% group_by(movie) %>% summarise(n = mean(n, na.rm = TRUE))
+
+#выгрузим
+#install.packages("writexl")
+library(writexl)
+
+write_xlsx(movie_em, "movie_em.xlsx")
+
+#словарь по теме "деньги"
+#добавим свой словарь про деньги
+m_voc <- read_excel("C:/R/money_voc.xlsx")
+
+#приведем слова этого словаря к корню
+stem_voc <- m_voc %>%
+  mutate(stem = wordStem(word))
+
+#посмотрим на частоту слов, которые означают деньги для всех отзывов
+A <- stem_review %>% inner_join(stem_voc, by = "stem") #%>% count(stem, sort = TRUE)
+head(A)
+#inner_join оставляет только общие элементы
+View(A)
+
+#посдчет слов из словаря для каждого отзыва
+review_m <- A %>%
+  count(review, stem, sort = TRUE)
+
+review_all_m <- review_m %>% group_by(review) %>% summarise(n = sum(n, na.rm = TRUE))
+full_m <- review_all %>% inner_join(review_all_m, by = "review")
+ratio_m <- full_m$n.y / full_m$n.x
+ratio_m <- full_m %>% group_by(review) %>% summarise(n = n.y / n.x)
+
+#соединим с фильмами и усредним по фильмам
+movie_m <- ratio_m %>% inner_join(movie_name, by = "review")
+movie_m <- movie_m %>% group_by(movie) %>% summarise(n = mean(n, na.rm = TRUE))
+
+#выгрузим
+#install.packages("writexl")
+library(writexl)
+
+write_xlsx(movie_m, "movie_m.xlsx")
+
+#словарь по теме "королевство"
+#добавим свой словарь про деньги
+king_voc <- read_excel("C:/R/king_voc.xlsx")
+
+#приведем слова этого словаря к корню
+stem_voc <- king_voc %>%
+  mutate(stem = wordStem(word))
+
+#посмотрим на частоту слов, которые означают деньги для всех отзывов
+A <- stem_review %>% inner_join(stem_voc, by = "stem") #%>% count(stem, sort = TRUE)
+head(A)
+#inner_join оставляет только общие элементы
+
+#посдчет слов из словаря для каждого отзыва
+review_king <- A %>%
+  count(review, stem, sort = TRUE)
+
+review_all_king <- review_king %>% group_by(review) %>% summarise(n = sum(n, na.rm = TRUE))
+full_king <- review_all %>% inner_join(review_all_king, by = "review")
+#ratio_king <- full_king$n.y / full_king$n.x
+ratio_king <- full_king %>% group_by(review) %>% summarise(n = n.y / n.x)
+View(ratio_king)
+
+#соединим с фильмами и усредним по фильмам
+movie_king <- ratio_king %>% inner_join(movie_name, by = "review")
+movie_king <- movie_king %>% group_by(movie) %>% summarise(n = mean(n, na.rm = TRUE))
+
+#выгрузим
+#install.packages("writexl")
+library(writexl)
+
+write_xlsx(movie_king, "movie_king.xlsx")
+
+#словарь по военной теме
+#добавим свой словарь про деньги
+military_voc <- read_excel("C:/R/military_voc.xlsx")
+
+#приведем слова этого словаря к корню
+stem_voc <- military_voc %>%
+  mutate(stem = wordStem(word))
+
+#посмотрим на частоту слов, которые означают деньги для всех отзывов
+A <- stem_review %>% inner_join(stem_voc, by = "stem") #%>% count(stem, sort = TRUE)
+head(A)
+#inner_join оставляет только общие элементы
+
+#посдчет слов из словаря для каждого отзыва
+review_military <- A %>%
+  count(review, stem, sort = TRUE)
+
+review_all_military <- review_military %>% group_by(review) %>% summarise(n = sum(n, na.rm = TRUE))
+full_military <- review_all %>% inner_join(review_all_military, by = "review")
+#ratio_king <- full_king$n.y / full_king$n.x
+ratio_military <- full_military %>% group_by(review) %>% summarise(n = n.y / n.x)
+View(ratio_military)
+
+#соединим с фильмами и усредним по фильмам
+movie_military <- ratio_military %>% inner_join(movie_name, by = "review")
+movie_military <- movie_military %>% group_by(movie) %>% summarise(n = mean(n, na.rm = TRUE))
+
+#выгрузим
+#install.packages("writexl")
+library(writexl)
+
+write_xlsx(movie_military, "movie_military.xlsx")
+
+#словарь по романтической теме
+rom_voc <- read_excel("C:/R/voc_rom.xlsx")
+
+#приведем слова этого словаря к корню
+stem_voc <- rom_voc %>%
+  mutate(stem = wordStem(word))
+
+#посмотрим на частоту романтических слов для всех отзывов
+A <- stem_review %>% inner_join(stem_voc, by = "stem") #%>% count(stem, sort = TRUE)
+head(A)
+#inner_join оставляет только общие элементы
+
+#посдчет слов из словаря для каждого отзыва
+review_rom <- A %>%
+  count(review, stem, sort = TRUE)
+
+review_all_rom <- review_rom %>% group_by(review) %>% summarise(n = sum(n, na.rm = TRUE))
+full_rom <- review_all %>% inner_join(review_all_rom, by = "review")
+#ratio_king <- full_king$n.y / full_king$n.x
+ratio_rom <- full_rom %>% group_by(review) %>% summarise(n = n.y / n.x)
+
+#соединим с фильмами и усредним по фильмам
+movie_rom <- ratio_rom %>% inner_join(movie_name, by = "review")
+movie_rom <- movie_rom %>% group_by(movie) %>% summarise(n = mean(n, na.rm = TRUE))
+
+#выгрузим
+#install.packages("writexl")
+library(writexl)
+
+write_xlsx(movie_rom, "movie_rom.xlsx")
