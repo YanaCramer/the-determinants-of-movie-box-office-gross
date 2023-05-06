@@ -1,0 +1,385 @@
+
+library(plotly)
+library(ggplot2)
+library(lmtest)
+library(dplyr)
+library(corrplot)
+library(readxl)
+library(nnet)
+library(MASS)
+library(factoextra)
+library(modelsummary)
+
+data <- read_excel("C:/R/data17.xlsx")
+View(data)
+
+#описательная статистика
+#скрипичный график
+fig1 <- data %>%
+  plot_ly(
+    x = ~ genre,
+    y = ~ boxOffice_corr,
+    split = ~ genre,
+    type = 'violin',
+    box = list(
+      visible = T
+    ),
+    meanline = list(
+      visible = T
+    )
+  )
+
+fig1 <- fig1 %>%
+  layout(
+    xaxis = list(
+      title = "genres"
+    ),
+    yaxis = list(
+      title = "box office",
+      zeroline = F
+    )
+  )
+fig1
+
+#корреляционная матрица
+corrplot(cor(data[, -c(1, 2, 5, 6, 10, 16, 17, 18, 19, 20)]))
+
+#summary по всем переменным
+install.packages('stargazer')
+library(stargazer)
+data <- as.data.frame(data)
+stargazer(data, summary = TRUE)
+
+summary(data)
+
+datasummary_balance(~ 1, data , output = "gt", dinm = TRUE)
+
+#сделаем фиктивные переменные жанров, стран, MPAA и дистрибьюторов
+data <- data.frame(data)
+
+distributor <- class.ind(as.factor(data[, 2]))
+distributor <- data.frame(distributor)
+
+genres <- class.ind(as.factor(data[, 5]))
+genres <- data.frame(genres)
+
+MPAA <- class.ind(as.factor(data[, 10]))
+MPAA <- data.frame(MPAA)
+
+country <- class.ind(as.factor(data[, 6]))
+country <- data.frame(country)
+
+data1 <- data[,-c(2, 5, 6, 10)]
+data2 <- cbind.data.frame(data1, distributor, genres, MPAA, country)
+View(data2)
+write_xlsx(data2, "data2.xlsx")
+
+#простая регрессия
+#линейная регрессия
+mod3 <- lm(log(boxOffice_corr) ~ log(budget_corr) + log(screen) + log(UserReviews+1)
+  +. -title -budget_corr - other_genre - other_country - other_distributor
+           - screen - UserReviews , data2)
+summary(mod3)
+mod4 <- stepAIC(mod3)
+summary(mod4)
+
+crPlots(mod4)
+
+
+#линейная регрессия без компонент
+mod5 <- lm(log(boxOffice_corr) ~ log(budget_corr) + log(screen) + log(UserReviews + 1)
+  +. -title -budget_corr -screen -UserReviews
+  - comp1 - comp2 - comp3 - comp4 - other_genre - other_country - other_distributor, data2)
+summary(mod5)
+#почистим данные, используя критерий Акаике
+mod6 <- stepAIC(mod5)
+summary(mod6)
+
+#для проверки спецификации уравнения
+mod31 <- lm(log(boxOffice_corr) ~ log(budget_corr)
+  +. -title -budget_corr
+  - comp1 - comp2 - comp3 - comp4 - other_genre - other_country - other_distributor, data2)
+mod32 <- stepAIC(mod31)
+summary(mod31)
+
+crPlots(mod32)
+
+#регрессия без трейлеринга
+mod17 <- lm(log(boxOffice_corr) ~ log(budget_corr) + log(screen) + log(UserReviews + 1)
+  +. -title -budget_corr -screen -UserReviews
+   - other_genre - other_country - other_distributor, data2[, -16])
+summary(mod17)
+#почистим данные, используя критерий Акаике
+mod18 <- stepAIC(mod17)
+summary(mod18)
+
+#регрессия с очищенными компонентами
+data_mod <- read_excel("C:/R/data17_mod.xlsx")
+
+clean_mod <- lm(log(boxOffice_corr) ~ log(budget_corr) + log(screen) + log(UserReviews+1)
+  +. -title -budget_corr - screen - UserReviews -comp2 , data_mod)
+summary(clean_mod)
+clean_mod1 <- stepAIC(clean_mod)
+summary(clean_mod1)
+
+msummary(list("Regression without components" = mod6,
+              "Regression with components" = mod4,
+              "Regression without trailering" = mod18,
+              "Regression with clean components" = clean_mod1), stars = c('*' = .1, '**' = .05, '***' = .01), output = "models.docx")
+
+vif(mod6)
+vif(mod4)
+vif(mod18)
+# мультиколлинеарности нет
+
+#проверим, нужен ли логарифм
+boxcox(mod)
+#логарифм нужен, т к лямбда близка к 0
+
+#линейная регрессия с компонентами и без рейтинга
+mod11 <- lm(log(boxOffice_corr) ~ log(budget_corr) + log(screen) + log(UserReviews + 1)
+  +. -title -budget_corr - rating - screen - UserReviews
+  - other_distributor - other_genre - other_country, data2)
+summary(mod11)
+#почистим данные, используя критерий Акаике
+mod12 <- stepAIC(mod11)
+summary(mod12)
+
+#линейная регрессия с компонентами и без отзывов критиков с кинопоиска
+mod13 <- lm(log(boxOffice_corr) ~ log(budget_corr) + log(screen) + log(UserReviews + 1)
+  +. -title -budget_corr - screen - UserReviews
+  - CriticalReviews - CriticalReviewsPositiveRatio - other_distributor - other_genre - other_country, data2)
+summary(mod13)
+
+#почистим данные, используя критерий Акаике
+mod14 <- stepAIC(mod13)
+summary(mod14)
+
+#линейная регрессия с компонентами без рейтинга и без отзывов критиков с кинопоиска
+mod15 <- lm(log(boxOffice_corr) ~ log(budget_corr) +. -title -budget_corr
+  - CriticalReviews - CriticalReviewsPositiveRatio - rating - other_distributor - other_genre - other_country, data2)
+summary(mod15)
+
+#почистим данные, используя критерий Акаике
+mod16 <- stepAIC(mod15)
+summary(mod16)
+
+#выведем все модели в одной таблице
+msummary(list("Regression with components" = mod4,
+              "Regression without rating" = mod12,
+              "Regression without Critical Reviews from kinopoisk" = mod14),
+         stars = c('*' = .1, '**' = .05, '***' = .01), output = "models1.docx")
+
+
+#случайный лес c токенами топ-100 по tf (по наибольшим весам из главных компонент)
+#install.packages("randomForest")
+library(randomForest)
+
+data_token <- read_excel("C:/R/data_token.xlsx")
+names(data_token)
+model_rf <- randomForest(data = na.omit(data_token), log(boxOffice_corr) ~ . -title - budget_corr - screen - UserReviews
+                        + log(budget_corr) + log(screen) + log(UserReviews+1),
+                         ntree = 200, replace = FALSE, nodesize = 1, importance = TRUE, localImp = FALSE,
+                         proximity = FALSE, norm.votes = TRUE, do.trace = 500/10,
+                         keep.forest = TRUE, corr.bias = FALSE, keep.inbag = FALSE)
+
+predict(model_rf)
+model_rf$rsq
+
+#график каменистой осыпи
+plot(model_rf)
+
+#таблица важности переменных
+importance(model_rf)
+
+#позволяет обнаружить самые информативные переменные
+varImpPlot(model_rf)
+
+#install.packages('randomForestExplainer')
+library(randomForestExplainer)
+
+#ранжирование переменных
+A <- measure_importance(model_rf)
+plot_multi_way_importance(A,
+                          x_measure = "mse_increase",
+                          y_measure = "node_purity_increase")
+
+#проверка значимости слов
+data_token6 <- read_excel("C:/R/data_token6.xlsx")
+model_rf6 <- randomForest(data = na.omit(data_token6), log(boxOffice_corr) ~ . -title - budget_corr + log(budget_corr),
+                         ntree = 200, replace = FALSE, nodesize = 1, importance = TRUE, localImp = FALSE,
+                         proximity = FALSE, norm.votes = TRUE, do.trace = 500/10,
+                         keep.forest = TRUE, corr.bias = FALSE, keep.inbag = FALSE)
+model_rf6$rsq
+model_rf7 <- randomForest(data = na.omit(data_token6), log(boxOffice_corr) ~ . -title - budget_corr + log(budget_corr)
+                           -instal - cgi - sequel - movi - origin - love,
+                          ntree = 100, replace = FALSE, nodesize = 1, importance = TRUE, localImp = FALSE,
+                          proximity = FALSE, norm.votes = TRUE, do.trace = 500/10,
+                          keep.forest = TRUE, corr.bias = FALSE, keep.inbag = FALSE)
+names(data_token6)
+model_rf7$rsq
+
+model_rf7$mse
+
+#тематические словари
+#словарь с эмоциями
+data_em <- read_excel("C:/R/data17_em.xlsx")
+#View(data_em)
+#простая регрессия
+#линейная регрессия
+mod_em <- lm(log(boxOffice_corr) ~ log(budget_corr) + log(screen) + log(UserReviews+1) +.
+  - title - budget_corr - screen - UserReviews
+  - comp1 - comp2 - comp3 - comp4, na.omit(data_em))
+summary(mod_em)
+
+#почистим данные, используя критерий Акаике
+mod_em1 <- stepAIC(mod_em)
+summary(mod_em1)
+
+#линейная регрессия с добавлением фиктивной переменной произведения жанров и словаря
+mod_em_genre <- lm(log(boxOffice_corr) ~ log(budget_corr) + log(screen) + log(UserReviews+1)
+  + animation:emotions
+  + biography:emotions + drama:emotions + comedy:emotions +
+  criminal:emotions + adventures:emotions +
+  thriller:emotions + horror:emotions + fantastics:emotions +
+  action:emotions +. -title -budget_corr -screen -UserReviews
+  - comp1 - comp2 - comp3 - comp4 - emotions , na.omit(data_em))
+summary(mod_em_genre)
+
+#почистим данные, используя критерий Акаике
+mod_em1_genre <- stepAIC(mod_em_genre)
+summary(mod_em1_genre)
+
+#попробуем словарь про деньги
+data_m <- read_excel("C:/R/data17_m.xlsx")
+
+#простая регрессия
+#линейная регрессия
+mod_m <- lm(log(boxOffice_corr) ~ log(budget_corr) + log(screen) + log(UserReviews+1) +.
+  - title - budget_corr - screen - UserReviews
+  - comp1 - comp2 - comp3 - comp4, na.omit(data_m))
+summary(mod_m)
+
+#почистим данные, используя критерий Акаике
+mod_m1 <- stepAIC(mod_m)
+summary(mod_m1)
+
+#линейная регрессия с добавлением фиктивной переменной произведения жанров и словаря
+mod_m_genre <- lm(log(boxOffice_corr) ~ log(budget_corr) + log(screen) + log(UserReviews+1)
+  + animation:money_voc
+  + biography:money_voc + drama:money_voc + comedy:money_voc +
+  criminal:money_voc + adventures:money_voc +
+  thriller:money_voc + horror:money_voc + fantastics:money_voc +
+  action:money_voc +. -title -budget_corr -screen -UserReviews
+  - comp1 - comp2 - comp3 - comp4 - money_voc, na.omit(data_m))
+summary(mod_m_genre)
+
+#почистим данные, используя критерий Акаике
+mod_m1_genre <- stepAIC(mod_m_genre)
+summary(mod_m1_genre)
+
+#попробуем словарь про королевство
+data_king <- read_excel("C:/R/data17_king.xlsx")
+#View(data_king)
+#простая регрессия
+#линейная регрессия
+mod_king <- lm(log(boxOffice_corr) ~ log(budget_corr) + log(screen) + log(UserReviews+1) +.
+  - title - budget_corr - screen - UserReviews
+  - comp1 - comp2 - comp3 - comp4, na.omit(data_king))
+summary(mod_king)
+
+#почистим данные, используя критерий Акаике
+mod_king1 <- stepAIC(mod_king)
+summary(mod_king1)
+
+#линейная регрессия с добавлением фиктивной переменной произведения жанров и словаря
+mod_king_genre <- lm(log(boxOffice_corr) ~ log(budget_corr) + log(screen) + log(UserReviews+1)
+  + animation:kingdom
+  + biography:kingdom + drama:kingdom + comedy:kingdom +
+  criminal:kingdom + adventures:kingdom +
+  thriller:kingdom + horror:kingdom + fantastics:kingdom +
+  action:kingdom +. -title -budget_corr -screen -UserReviews
+  - comp1 - comp2 - comp3 - comp4 - kingdom, na.omit(data_king))
+summary(mod_king_genre)
+
+#почистим данные, используя критерий Акаике
+mod_king1_genre <- stepAIC(mod_king_genre)
+summary(mod_king1_genre)
+
+#попробуем военный словарь
+data_military <- read_excel("C:/R/data17_military.xlsx")
+
+#простая регрессия
+#линейная регрессия
+mod_military <- lm(log(boxOffice_corr) ~ log(budget_corr) + log(screen) + log(UserReviews+1) +.
+  -title -budget_corr -screen -UserReviews
+  - comp1 - comp2 - comp3 - comp4, na.omit(data_military))
+summary(mod_military)
+
+#почистим данные, используя критерий Акаике
+mod_military1 <- stepAIC(mod_military)
+summary(mod_military1)
+
+#линейная регрессия с добавлением фиктивной переменной произведения жанров и словаря
+mod_military_genre <- lm(log(boxOffice_corr) ~ log(budget_corr) + log(screen) + log(UserReviews+1)
+  + animation:military
+  + biography:military + drama:military + comedy:military +
+  criminal:military + adventures:military +
+  thriller:military + horror:military + fantastics:military +
+  action:military +. -title -budget_corr -screen -UserReviews
+  - comp1 - comp2 - comp3 - comp4 - military, na.omit(data_military))
+summary(mod_military_genre)
+
+#почистим данные, используя критерий Акаике
+mod_military1_genre <- stepAIC(mod_military_genre)
+summary(mod_military1_genre)
+
+#попробуем романтический словарь
+data_rom <- read_excel("C:/R/data17_rom.xlsx")
+
+#простая регрессия
+#линейная регрессия
+mod_rom <- lm(log(boxOffice_corr) ~ log(budget_corr) + log(screen) + log(UserReviews+1) +.
+  -title -budget_corr -screen -UserReviews
+  - comp1 - comp2 - comp3 - comp4, na.omit(data_rom))
+summary(mod_rom)
+
+#почистим данные, используя критерий Акаике
+mod_rom1 <- stepAIC(mod_rom)
+summary(mod_rom1)
+
+#линейная регрессия с добавлением фиктивной переменной произведения жанров и словаря
+mod_rom_genre <- lm(log(boxOffice_corr) ~ log(budget_corr) + log(screen) + log(UserReviews+1)
+  + animation:romantic
+  + biography:romantic + drama:romantic + comedy:romantic +
+  criminal:romantic + adventures:romantic +
+  thriller:romantic + horror:romantic + fantastics:romantic +
+  action:romantic +. -title -budget_corr -screen -UserReviews
+  - comp1 - comp2 - comp3 - comp4 - romantic, na.omit(data_rom))
+summary(mod_rom_genre)
+
+#почистим данные, используя критерий Акаике
+mod_rom1_genre <- stepAIC(mod_rom_genre)
+summary(mod_rom1_genre)
+
+#выведем все модели со словарями в одной таблице
+msummary(list("Regression with emotions" = mod_em1,
+              "Regression with money" = mod_m1,
+              "Regression with kingdom" = mod_king1,
+              "Regression with military" = mod_military1,
+              "Regression with romantic" = mod_rom1),
+         stars = c('*' = .1, '**' = .05, '***' = .01), output = "models_voc.docx")
+
+
+msummary(list("Regression with emotions * genres" = mod_em1_genre,
+              "Regression with money * genres" = mod_m1_genre,
+              "Regression with kingdom * genres" = mod_king1_genre,
+              "Regression with military * genres" = mod_military1_genre,
+              "Regression with romantic * genres" = mod_rom1_genre),
+         stars = c('*' = .1, '**' = .05, '***' = .01), output = "models_voc_genre.docx")
+
+
+
+
+
+
