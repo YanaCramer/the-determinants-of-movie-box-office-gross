@@ -1,0 +1,201 @@
+library(readr)
+library(tidytext)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+library(tidyr)
+library(scales)
+#install.packages('gt')
+library(gt)
+library(readxl)
+#install.packages('lexicon')
+library(lexicon)
+#install.packages('wordcloud')
+library(wordcloud)
+library(reshape2)
+library(textdata)
+#install.packages('topicmodels')
+library(topicmodels)
+library(tidyverse)
+library(SnowballC)
+#install.packages('widyr')
+library(widyr)
+#install.packages('furrr')
+library(furrr)
+library(irlba)
+
+review <- read_excel("C:/R/second_weekend_review.xlsx")
+
+#разделим на слова
+tidy_review <- review %>%
+  unnest_tokens(output = word, input = text)
+
+#удалим стоп-слова
+tidy_review <- tidy_review %>% anti_join(stop_words)
+
+#посдчет слов
+review_words <- tidy_review %>%
+  count(movie, word, sort = TRUE)
+
+#подсчет слов во всех отзывах
+total_words <- review_words %>%
+  group_by(movie) %>%
+  summarize(total = sum(n))
+#добавим правый столбец к левому
+review_words <- left_join(review_words, total_words)
+
+#найдем слова, которые важны, но не слишком распространены
+review_words <- review_words %>%
+  bind_tf_idf(word, movie, n)
+
+#ранжируем по убыванию td-idf
+A <- review_words %>%
+  dplyr::select(-total) %>%
+  arrange(desc(tf_idf))
+A[, 3:6] <- A[, 3:6] %>% round(4)
+
+#приведение в пригодный для анализа вид
+#оставим слова, которые встречаются больше 100 раз
+tidy_reviews2 <- review %>%
+  dplyr::select(movie, text) %>%
+  unnest_tokens(word, text) %>%
+  anti_join(get_stopwords(), by = "word") %>%
+  add_count(word) %>%
+  filter(n >= 100) %>%
+  select(-n) %>% unique()
+
+#поиск связанных слов: если PMI высокий, то слова связаны
+tidy_pmi <- tidy_reviews2 %>%
+  pairwise_pmi(word, movie)
+
+#svd разложение: получим координаты слов в одномерном пространстве
+tidy_word_vectors <- tidy_pmi %>%
+  widely_svd(
+    item1, item2, pmi,
+    nv = 3, maxit = 20
+  )
+
+#PCA - ключевые 30 слов
+tidy_word_vectors %>%
+  filter(dimension <= 10) %>%
+  group_by(dimension) %>%
+  top_n(30, abs(value)) %>%
+  ungroup() %>%
+  mutate(item1 = reorder_within(item1, value, dimension)) %>%
+  ggplot(aes(item1, value, fill = dimension)) +
+  geom_col(alpha = 0.8, show.legend = FALSE) +
+  facet_wrap(~dimension, scales = "free_y", ncol = 4) +
+  scale_x_reordered() +
+  coord_flip() +
+  labs(
+    x = NULL,
+    y = "Value",
+    title = "First principal components for texts of reviews",
+    subtitle = paste("Top words contributing to the components that explain",
+                     "the most variation")
+  )
+
+#можно представить отзывы как векторы в пространстве с небольшой размерностью
+word_matrix <- tidy_reviews2 %>% na.omit() %>%
+  count(movie, word) %>%
+  cast_sparse(movie, word, n)
+embedding_matrix <- tidy_word_vectors %>%
+  cast_sparse(item1, dimension, value)
+
+#зададим одинаковый порядок
+A <- colnames(word_matrix)[order(colnames(word_matrix))]
+B <- rownames(embedding_matrix)[order(rownames(embedding_matrix))]
+
+doc_matrix <- word_matrix[,A] %*% embedding_matrix[B,]
+
+#посмотрим на отзывы
+head(round(doc_matrix, 2),15)
+
+component1 <- doc_matrix[, 1]
+component2 <- doc_matrix[, 2]
+component3 <- doc_matrix[, 3]
+#component4 <- doc_matrix[, 4]
+
+data_comp <- cbind(component1, component2, component3)
+View(data_comp)
+data_comp <- as.data.frame(data_comp)
+write_xlsx(data_comp, "data_comp_second_week.xlsx")
+library(writexl)
+data_comp$title <- row.names(data_comp)
+
+data_sec <- read_excel("C:/R/data17_second_week_bin.xlsx")
+
+library(MASS)
+
+#простая регрессия
+#линейная регрессия
+mod_sec <- lm(log(sec_week_bo) ~ log(budget_corr) + log(screen) + log(UserReviews+1)
+  +. -title -budget_corr -first_week_bo - screen - UserReviews , na.omit(data_sec))
+summary(mod_sec)
+mod_sec$residuals
+
+vif(mod_sec1)
+vif(mod_sec3)
+vif(mod_sec5)
+
+mod_sec1 <- stepAIC(mod_sec)
+summary(mod_sec1)
+
+crPlots(mod_sec1)
+
+#линейная регрессия без компонент
+mod_sec2 <- lm(log(sec_week_bo) ~ log(budget_corr) + log(screen) +log(UserReviews+1)
+  +. -title -budget_corr - screen - UserReviews -first_week_bo
+  - comp1 - comp2 - comp3 - comp4, na.omit(data_sec))
+summary(mod_sec2)
+
+#почистим данные, используя критерий Акаике
+mod_sec3 <- stepAIC(mod_sec2)
+summary(mod_sec3)
+
+#посмотрим на остатки модели, исключив компоненту 1 из регрессии
+data_bin <- read_excel("C:/R/data17_second_week_bin.xlsx")
+mod_bin <- lm(log(sec_week_bo) ~ log(budget_corr) + log(screen) +log(UserReviews+1)
+  +. -title -budget_corr - screen - UserReviews -first_week_bo -comp1 -bin, na.omit(data_bin))
+
+summary(mod_bin)
+mod_bin1 <- stepAIC(mod_bin)
+mod_bin$residuals
+#с добавлением 1-й компоненты
+mod_bin2 <- lm(log(sec_week_bo) ~ log(budget_corr) + log(screen) +log(UserReviews+1)
+  +. -title -budget_corr - screen - UserReviews -first_week_bo -bin, na.omit(data_bin))
+
+summary(mod_bin2)
+mod_bin3 <- stepAIC(mod_bin2)
+mod_bin2$residuals
+
+data_cl <- read_excel("C:/R/data17_second_week2.xlsx")
+
+mod_cl <- lm(log(sec_week_bo) ~ log(budget_corr) + log(screen) +log(UserReviews+1)
+  +. -title -budget_corr - screen - UserReviews -first_week_bo , na.omit(data_cl))
+summary(mod_cl)
+
+mod_cl1 <- stepAIC(mod_cl)
+summary(mod_cl1)
+
+#регрессия без трейлеринга
+mod_sec4 <- lm(log(sec_week_bo) ~ log(budget_corr) + log(screen) +log(UserReviews+1)
+  +. -title -budget_corr -first_week_bo -R - screen - UserReviews, data_sec[, -10])
+summary(mod_sec4)
+
+#почистим данные, используя критерий Акаике
+mod_sec5 <- stepAIC(mod_sec4)
+summary(mod_sec5)
+
+#проверим мультиколлинеарность
+#install.packages('car')
+library(car)
+vif(mod_sec)
+
+#корреляционная матрица
+corrplot(cor(na.omit(data_sec[, -1])))
+
+msummary(list("Regression without components" = mod_sec3,
+              "Regression with components" = mod_sec1,
+              "Regression without trailering" = mod_sec5,
+              "Regression with clean components" = mod_cl1), stars = c('*' = .1, '**' = .05, '***' = .01), output = "models_sec.docx")
