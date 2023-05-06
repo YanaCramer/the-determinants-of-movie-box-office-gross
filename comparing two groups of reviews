@@ -1,0 +1,25 @@
+library(quanteda)
+library(quanteda.corpora)
+library(LSX)
+
+data <- read_excel("C:/R/text_data.xlsx")
+
+data <- data[sample(1:nrow(data)), ]
+
+corpus <- corpus(data, text_field = "text")
+
+corp_2016m <- corpus_subset(corpus, year(date) >= 2017 & year(date) <= 2018)
+
+#сравнение данных до и после определенной даты
+toks_news <- tokens(corp_2016m, remove_punct = TRUE)
+dfmat_news <- dfm(toks_news)
+
+tstat_key <- textstat_keyness(dfmat_news,
+                              target = year(dfmat_news$date) >= 2018)
+textplot_keyness(tstat_key)
+
+tstat_key <- textstat_keyness(dfmat_news,
+                              target = dfmat_news$bo >= 2)
+dfmat_news$bo
+textplot_keyness(tstat_key)
+
