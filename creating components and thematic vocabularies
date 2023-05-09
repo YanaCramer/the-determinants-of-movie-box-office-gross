@@ -266,7 +266,7 @@ write_xlsx(data_comp, "data_comp.xlsx")
 
 
 #добавим свой словарь эмоций и чувств
-em_voc <- read_excel("C:/R/emotions_and_feelings_voc.xlsx")
+em_voc <- read_excel("C:/R/emotions_and_feelings_vocabulary.xlsx")
 
 #приведем слова этого словаря к корню
 stem_voc <- em_voc %>%
@@ -317,7 +317,7 @@ write_xlsx(movie_em, "movie_em.xlsx")
 
 #словарь по теме "деньги"
 #добавим свой словарь про деньги
-m_voc <- read_excel("C:/R/money_voc.xlsx")
+m_voc <- read_excel("C:/R/money_vocabulary.xlsx")
 
 #приведем слова этого словаря к корню
 stem_voc <- m_voc %>%
@@ -350,7 +350,7 @@ write_xlsx(movie_m, "movie_m.xlsx")
 
 #словарь по теме "королевство"
 #добавим свой словарь про деньги
-king_voc <- read_excel("C:/R/king_voc.xlsx")
+king_voc <- read_excel("C:/R/king_vocabulary.xlsx")
 
 #приведем слова этого словаря к корню
 stem_voc <- king_voc %>%
@@ -380,8 +380,8 @@ library(writexl)
 write_xlsx(movie_king, "movie_king.xlsx")
 
 #словарь по военной теме
-#добавим свой словарь про деньги
-military_voc <- read_excel("C:/R/military_voc.xlsx")
+#добавим свой словарь про войну
+military_voc <- read_excel("C:/R/military_vocabulary.xlsx")
 
 #приведем слова этого словаря к корню
 stem_voc <- military_voc %>%
@@ -412,7 +412,7 @@ library(writexl)
 write_xlsx(movie_military, "movie_military.xlsx")
 
 #словарь по романтической теме
-rom_voc <- read_excel("C:/R/voc_rom.xlsx")
+rom_voc <- read_excel("C:/R/romantic_vocabulary.xlsx")
 
 #приведем слова этого словаря к корню
 stem_voc <- rom_voc %>%
