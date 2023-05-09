@@ -18,8 +18,10 @@ tstat_key <- textstat_keyness(dfmat_news,
                               target = year(dfmat_news$date) >= 2018)
 textplot_keyness(tstat_key)
 
+#сравнение большого и маленького бокс-офиса по словам
 tstat_key <- textstat_keyness(dfmat_news,
                               target = dfmat_news$bo >= 2)
+                              
 dfmat_news$bo
 textplot_keyness(tstat_key)
 
