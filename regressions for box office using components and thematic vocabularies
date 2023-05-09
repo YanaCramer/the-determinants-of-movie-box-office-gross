@@ -111,7 +111,7 @@ mod18 <- stepAIC(mod17)
 summary(mod18)
 
 #регрессия с очищенными компонентами
-data_mod <- read_excel("C:/R/data_mod.xlsx")
+data_mod <- read_excel("C:/R/data_new_comp.xlsx")
 
 clean_mod <- lm(log(boxOffice_corr) ~ log(budget_corr) + log(screen) + log(UserReviews+1)
   +. -title -budget_corr - screen - UserReviews -comp2 , data_mod)
