@@ -17,6 +17,16 @@ install.packages("SnowballC")
 install.packages("widyr")
 install.packages("furrr")
 install.packages("irlba")
+install.packages('tidymodels')
+install.packages('textrecipes')
+install.packages('LiblineaR')
+install.packages('ranger')
+install.packages('spacyr')
+install.packages('text2vec')
+install.packages('rsample')
+#install.packages('recipes')
+install.packages('glmnet')
+#install.packages('kernlab')
 
 library(readr)
 library(tidytext)
@@ -38,16 +48,7 @@ library(widyr)
 library(furrr)
 library(irlba)
 
-install.packages('tidymodels')
-install.packages('textrecipes')
-install.packages('LiblineaR')
-install.packages('ranger')
-install.packages('spacyr')
-install.packages('text2vec')
-install.packages('rsample')
-#install.packages('recipes')
-install.packages('glmnet')
-#install.packages('kernlab')
+
 
 library(kernlab)
 library(recipes)
@@ -62,6 +63,107 @@ library(text2vec)
 library(generics)
 library(glmnet)
 
+review <- read_excel("C:/R/text_data.xlsx")
+
+#разделим на слова
+tidy_review <- review %>%
+  unnest_tokens(output = word, input = text)
+
+#удалим стоп-слова
+tidy_review <- tidy_review %>% anti_join(stop_words)
+
+#посдчет слов
+review_words <- tidy_review %>%
+  count(movie, word, sort = TRUE)
+
+#подсчет слов во всех отзывах
+total_words <- review_words %>%
+  group_by(movie) %>%
+  summarize(total = sum(n))
+#добавим правый столбец к левому
+review_words <- left_join(review_words, total_words)
+
+#найдем слова, которые важны, но не слишком распространены
+review_words <- review_words %>%
+  bind_tf_idf(word, movie, n)
+
+#ранжируем по убыванию td-idf
+A <- review_words %>%
+  dplyr::select(-total) %>%
+  arrange(desc(tf_idf))
+A[, 3:6] <- A[, 3:6] %>% round(4)
+
+#приведение в пригодный для анализа вид
+#оставим слова, которые встречаются больше 100 раз
+tidy_reviews2 <- review %>%
+  dplyr::select(movie, text) %>%
+  unnest_tokens(word, text) %>%
+  anti_join(get_stopwords(), by = "word") %>%
+  add_count(word) %>%
+  filter(n >= 100) %>%
+  select(-n) %>% unique()
+
+#поиск связанных слов: если PMI высокий, то слова связаны
+tidy_pmi <- tidy_reviews2 %>%
+  pairwise_pmi(word, movie)
+
+#svd разложение: получим координаты слов в одномерном пространстве
+tidy_word_vectors <- tidy_pmi %>%
+  widely_svd(
+    item1, item2, pmi,
+    nv = 4, maxit = 20
+  )
+
+#PCA - ключевые 30 слов
+tidy_word_vectors %>%
+  filter(dimension <= 10) %>%
+  group_by(dimension) %>%
+  top_n(30, abs(value)) %>%
+  ungroup() %>%
+  mutate(item1 = reorder_within(item1, value, dimension)) %>%
+  ggplot(aes(item1, value, fill = dimension)) +
+  geom_col(alpha = 0.8, show.legend = FALSE) +
+  facet_wrap(~dimension, scales = "free_y", ncol = 4) +
+  scale_x_reordered() +
+  coord_flip() +
+  labs(
+    x = NULL,
+    y = "Value",
+    title = "First principal components for texts of reviews",
+    subtitle = paste("Top words contributing to the components that explain",
+                     "the most variation")
+  )
+
+
+#можно представить отзывы как векторы в пространстве с небольшой размерностью
+word_matrix <- tidy_reviews2 %>% na.omit() %>%
+  count(movie, word) %>%
+  cast_sparse(movie, word, n)
+embedding_matrix <- tidy_word_vectors %>%
+  cast_sparse(item1, dimension, value)
+
+#зададим одинаковый порядок
+A <- colnames(word_matrix)[order(colnames(word_matrix))]
+B <- rownames(embedding_matrix)[order(rownames(embedding_matrix))]
+
+doc_matrix <- word_matrix[,A] %*% embedding_matrix[B,]
+
+#посмотрим на отзывы
+head(round(doc_matrix, 2),15)
+
+#посчитаем средние по каждой компоненте
+comp1 <- mean(doc_matrix[, 1])
+comp2 <- mean(doc_matrix[, 2])
+comp3 <- mean(doc_matrix[, 3])
+comp4 <- mean(doc_matrix[, 4])
+
+data_comp <- cbind(component1, component2, component3, component4)
+data_comp <- as.data.frame(data_comp)
+library(writexl)
+data_comp$title <- row.names(data_comp)
+write_xlsx(data_comp, "data_comp.xlsx")
+
+#теперь построим очищенные компоненты
 review <- read_excel("C:/R/text_data_mod.xlsx")
 
 #разделим на слова
@@ -163,7 +265,6 @@ data_comp$title <- row.names(data_comp)
 write_xlsx(data_comp, "data_comp.xlsx")
 
 
-
 #добавим свой словарь эмоций и чувств
 em_voc <- read_excel("C:/R/emotions_and_feelings_voc.xlsx")
 
@@ -258,7 +359,6 @@ stem_voc <- king_voc %>%
 #посмотрим на частоту слов, которые означают деньги для всех отзывов
 A <- stem_review %>% inner_join(stem_voc, by = "stem") #%>% count(stem, sort = TRUE)
 head(A)
-#inner_join оставляет только общие элементы
 
 #посдчет слов из словаря для каждого отзыва
 review_king <- A %>%
@@ -266,7 +366,6 @@ review_king <- A %>%
 
 review_all_king <- review_king %>% group_by(review) %>% summarise(n = sum(n, na.rm = TRUE))
 full_king <- review_all %>% inner_join(review_all_king, by = "review")
-#ratio_king <- full_king$n.y / full_king$n.x
 ratio_king <- full_king %>% group_by(review) %>% summarise(n = n.y / n.x)
 View(ratio_king)
 
@@ -299,7 +398,6 @@ review_military <- A %>%
 
 review_all_military <- review_military %>% group_by(review) %>% summarise(n = sum(n, na.rm = TRUE))
 full_military <- review_all %>% inner_join(review_all_military, by = "review")
-#ratio_king <- full_king$n.y / full_king$n.x
 ratio_military <- full_military %>% group_by(review) %>% summarise(n = n.y / n.x)
 View(ratio_military)
 
@@ -331,7 +429,6 @@ review_rom <- A %>%
 
 review_all_rom <- review_rom %>% group_by(review) %>% summarise(n = sum(n, na.rm = TRUE))
 full_rom <- review_all %>% inner_join(review_all_rom, by = "review")
-#ratio_king <- full_king$n.y / full_king$n.x
 ratio_rom <- full_rom %>% group_by(review) %>% summarise(n = n.y / n.x)
 
 #соединим с фильмами и усредним по фильмам
