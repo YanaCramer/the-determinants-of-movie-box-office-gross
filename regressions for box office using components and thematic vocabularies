@@ -10,7 +10,7 @@ library(MASS)
 library(factoextra)
 library(modelsummary)
 
-data <- read_excel("C:/R/data17.xlsx")
+data <- read_excel("C:/R/data_all.xlsx")
 View(data)
 
 #описательная статистика
@@ -71,8 +71,6 @@ country <- data.frame(country)
 
 data1 <- data[,-c(2, 5, 6, 10)]
 data2 <- cbind.data.frame(data1, distributor, genres, MPAA, country)
-View(data2)
-write_xlsx(data2, "data2.xlsx")
 
 #простая регрессия
 #линейная регрессия
@@ -84,7 +82,6 @@ mod4 <- stepAIC(mod3)
 summary(mod4)
 
 crPlots(mod4)
-
 
 #линейная регрессия без компонент
 mod5 <- lm(log(boxOffice_corr) ~ log(budget_corr) + log(screen) + log(UserReviews + 1)
@@ -114,7 +111,7 @@ mod18 <- stepAIC(mod17)
 summary(mod18)
 
 #регрессия с очищенными компонентами
-data_mod <- read_excel("C:/R/data17_mod.xlsx")
+data_mod <- read_excel("C:/R/data_mod.xlsx")
 
 clean_mod <- lm(log(boxOffice_corr) ~ log(budget_corr) + log(screen) + log(UserReviews+1)
   +. -title -budget_corr - screen - UserReviews -comp2 , data_mod)
@@ -223,7 +220,7 @@ model_rf7$mse
 
 #тематические словари
 #словарь с эмоциями
-data_em <- read_excel("C:/R/data17_em.xlsx")
+data_em <- read_excel("C:/R/data_emotions.xlsx")
 #View(data_em)
 #простая регрессия
 #линейная регрессия
@@ -251,7 +248,7 @@ mod_em1_genre <- stepAIC(mod_em_genre)
 summary(mod_em1_genre)
 
 #попробуем словарь про деньги
-data_m <- read_excel("C:/R/data17_m.xlsx")
+data_m <- read_excel("C:/R/data_money.xlsx")
 
 #простая регрессия
 #линейная регрессия
@@ -279,7 +276,7 @@ mod_m1_genre <- stepAIC(mod_m_genre)
 summary(mod_m1_genre)
 
 #попробуем словарь про королевство
-data_king <- read_excel("C:/R/data17_king.xlsx")
+data_king <- read_excel("C:/R/data_kingdom.xlsx")
 #View(data_king)
 #простая регрессия
 #линейная регрессия
@@ -307,7 +304,7 @@ mod_king1_genre <- stepAIC(mod_king_genre)
 summary(mod_king1_genre)
 
 #попробуем военный словарь
-data_military <- read_excel("C:/R/data17_military.xlsx")
+data_military <- read_excel("C:/R/data_military.xlsx")
 
 #простая регрессия
 #линейная регрессия
@@ -335,7 +332,7 @@ mod_military1_genre <- stepAIC(mod_military_genre)
 summary(mod_military1_genre)
 
 #попробуем романтический словарь
-data_rom <- read_excel("C:/R/data17_rom.xlsx")
+data_rom <- read_excel("C:/R/data_rom.xlsx")
 
 #простая регрессия
 #линейная регрессия
